@@ -1,10 +1,16 @@
 #include <curses.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <vector>
 #include <chrono>
 #include <thread>
 
 using namespace std;
+
+constexpr int BLACK  = 1;
+constexpr int WHITE  = 2;
+constexpr int EMPTY  = 4;
+constexpr int CHOSEN = 8;
 
 class Board {
 public:
@@ -54,6 +60,19 @@ public:
         draw();
     }
 
+    void arbitrary_move(int y, int x) {
+        board[user_cord.first][user_cord.second] &= ~CHOSEN;
+
+        if (y < 0 || y > 7 || x < 0 || x > 7) {
+            return;
+        }
+
+        user_cord.first  = y;
+        user_cord.second = x;
+
+        board[user_cord.first][user_cord.second] |= CHOSEN;
+    }
+
     bool set() {
         if (board[user_cord.first][user_cord.second] &   EMPTY) {
             board[user_cord.first][user_cord.second] &= ~EMPTY;
@@ -74,6 +93,10 @@ public:
         }
 
         return true;
+    }
+
+    vector<vector<int>> get_board() {
+        return board;
     }
 
 private:
@@ -320,16 +343,178 @@ private:
     bool                black_turn;
     int                 black_count;
     int                 white_count;
-    enum                { BLACK  = 1  , WHITE    = 2 , EMPTY = 4, CHOSEN = 8 };
     enum                { STABLE = 16 , UNSTABLE = 32 };
 };
+
+/* ---------------------------------------------------------------------------------------------------------------- */
+
+class Ai {
+public:
+    Ai(): board(), visited() {}
+
+    pair<int, int> move(Board& B) {
+        board = B.get_board();
+        vector<vector<int>>(8, vector<int>(8, -1)).swap(visited);
+        return easy_ai();
+    }
+
+private:
+    pair<int, int> easy_ai() {
+        for (int i=0; i<8; i++) {
+            for (int j=0; j<8; j++) {
+                if (board[i][j] & BLACK) {
+                    if (i > 0             &&  board[i-1][j  ] & EMPTY  &&  visited[i-1][j  ] == -1) { visited[i-1][j  ] = simulate(i-1, j  ); }
+                    if (i < 7             &&  board[i+1][j  ] & EMPTY  &&  visited[i+1][j  ] == -1) { visited[i+1][j  ] = simulate(i+1, j  ); }
+                    if (j > 0             &&  board[i  ][j-1] & EMPTY  &&  visited[i  ][j-1] == -1) { visited[i  ][j-1] = simulate(i  , j-1); }
+                    if (j < 7             &&  board[i  ][j+1] & EMPTY  &&  visited[i  ][j+1] == -1) { visited[i  ][j+1] = simulate(i  , j+1); }
+                    if ((i > 0 && j > 0)  &&  board[i-1][j-1] & EMPTY  &&  visited[i-1][j-1] == -1) { visited[i-1][j-1] = simulate(i-1, j-1); }
+                    if ((i > 0 && j < 7)  &&  board[i-1][j+1] & EMPTY  &&  visited[i-1][j+1] == -1) { visited[i-1][j+1] = simulate(i-1, j+1); }
+                    if ((i < 7 && j > 0)  &&  board[i+1][j-1] & EMPTY  &&  visited[i+1][j-1] == -1) { visited[i+1][j-1] = simulate(i+1, j-1); }
+                    if ((i > 7 && j > 7)  &&  board[i+1][j+1] & EMPTY  &&  visited[i+1][j+1] == -1) { visited[i+1][j+1] = simulate(i+1, j+1); }
+                } } }
+
+        pair<int, int> res = make_pair(INT_MAX, INT_MAX);
+        int temp = 0;
+
+        for (int i=0; i<8; i++) {
+            for (int j=0; j<8; j++) {
+                if (visited[i][j] > temp) {
+                    temp = visited[i][j];
+                    res  = make_pair(i, j);
+                } } }
+
+        return res;
+    }
+
+    int simulate(int Y, int X) {
+        board[Y][X] &= ~EMPTY;
+        board[Y][X] |=  WHITE;
+        int res = 0;
+
+        // up
+        if (Y > 0) {
+            for (int i=Y-1; i >= 0; i--) {
+                if (board[i][X] & EMPTY) {
+                    break;
+                }
+                if (board[i][X] & WHITE) {
+                    if (Y - i == 1) { break; }
+                    res += Y - i - 1;
+                    break;
+                }
+            } }
+
+        // down
+        if (Y < 7) {
+            for (int i=Y+1; i < 8; i++) {
+                if (board[i][X] & EMPTY) {
+                    break;
+                }
+                if (board[i][X] & WHITE) {
+                    if (i - Y == 1) { break; }
+                    res += i - Y - 1;
+                    break;
+                }
+            } }
+
+        // left
+        if (X > 0) {
+            for (int i=X-1; i >= 0; i--) {
+                if (board[Y][i] & EMPTY) {
+                    break;
+                }
+                if (board[Y][i] & WHITE) {
+                    if ( X - i == 1) { break; }
+                    res += X - i - 1;
+                    break;
+                }
+            } }
+
+        // right
+        if (X < 7) {
+            for (int i=X+1; i < 8; i++) {
+                if (board[Y][i] & EMPTY) {
+                    break;
+                }
+                if (board[Y][i] & WHITE) {
+                    if (i - X == 1) { break; }
+                    res += i - X - 1;
+                    break;
+                }
+            } }
+
+        // up-left
+        if (Y > 0 && X > 0) {
+            for (int i=1; Y-i >= 0 && X-i >= 0; i++) {
+                if (board[Y-i][X-i] & EMPTY) {
+                    break;
+                }
+                if (board[Y-i][X-i] & WHITE) {
+                    if (i == 1) { break; }
+                    res += i - 1;
+                    break;
+                }
+            } }
+
+        // down-right
+        if (Y < 7 && X < 7) {
+            for (int i=1; Y+i < 8 && X+i < 8; i++) {
+                if (board[Y+i][X+i] & EMPTY) {
+                    break;
+                }
+                if (board[Y+i][X+i] & WHITE) {
+                    if (i == 1) { break; }
+                    res += i - 1;
+                    break;
+                }
+            } }
+
+        // up-right
+        if (Y > 0 && X < 7) {
+            for (int i=1; Y-i >= 0 && X+i < 8; i++) {
+                if (board[Y-i][X+i] & EMPTY) {
+                    break;
+                }
+                if (board[Y-i][X+i] & WHITE) {
+                    if (i == 1) { break; }
+                    res += i - 1;
+                    break;
+                }
+            } }
+
+        // down-left
+        if (Y < 7 && X > 0) {
+            for (int i=1; Y+i < 8 && X-i >= 0; i++) {
+                if (board[Y+i][X-i] & EMPTY) {
+                    break;
+                }
+                if (board[Y+i][X-i] & WHITE) {
+                    if (i == 1) { break; }
+                    res += i - 1;
+                    break;
+                }
+            } }
+
+        board[Y][X] &= ~WHITE;
+        board[Y][X] |=  EMPTY;
+        return res;
+    }
+
+    vector<vector<int>> board;
+    vector<vector<int>> visited;
+};
+
+/* ---------------------------------------------------------------------------------------------------------------- */
 
 class Othello {
 public:
     Othello()
-    : board() {}
+    : board(),
+      ai(),
+      has_ai(false) {}
 
     bool main_loop() {
+        if (! user_interface()) { return false; }
         board.init();
 
         while (true) {
@@ -356,7 +541,20 @@ public:
                 break;
 
             case ' ':
-                if (! board.set()){ return gameover(); }
+                if (! board.set()) {
+                    return gameover();
+                }
+                if (has_ai) {
+                    pair<int, int> temp = ai.move(board);
+                    if (temp.first == INT_MAX && temp.second == INT_MAX) {
+                        gameover();
+                    }
+
+                    board.arbitrary_move(temp.first, temp.second);
+                    if (! board.set()) {
+                        return gameover();
+                    }
+                }
                 break;
 
             case 'q':
@@ -368,6 +566,31 @@ public:
         }
     }
 private:
+    bool user_interface() {
+        clear();
+        mvaddstr(2 * 3, 4 * 6, "Please choose a mode");
+        mvaddstr(4 * 3, 5 * 6, "1. Human VS Human");
+        mvaddstr(5 * 3, 5 * 6, "2. Human VS PC");
+        mvaddstr(6 * 3, 5 * 6, "Press 1 and 2 to choose or q to quit");
+
+        char c = getch();
+        switch (c) {
+        case '1':
+            has_ai = false;
+            return true;
+        case '2':
+            has_ai = true;
+            return true;
+
+        case 'q':
+        case 'Q':
+            return false;
+
+        default:
+            return false;
+        }
+    }
+
     bool gameover() {
         clear();
         mvaddstr(4 * 3, 4 * 6, "game over, wanna start again? (Y/N)");
@@ -377,6 +600,8 @@ private:
     }
 
     Board board;
+    Ai    ai;
+    bool  has_ai;
 };
 
 int main() {
